@@ -60,7 +60,6 @@ typedef uint64_t binsquare_t;
 
 static void *binsquare_map = NULL;
 static const size_t binsquare_map_len = ((size_t) 1) << (ORDER*ORDER);
-static uint32_t innovative_count = 0;
 
 /*
  * 290
@@ -134,7 +133,7 @@ static inline binsquare_t square_addsub_line(square_t square,
     return binsquare;
 }
 
-static void binsquare_init(void)
+static void* binsquare_init(void)
 {
      void *map;
      const size_t size = binsquare_map_len * sizeof(binsquare_t);
@@ -193,6 +192,8 @@ static void binsquare_init(void)
 
      (void) memset(map, 0, size);
      binsquare_map = map;
+
+     return map;
 }
 
 static void binsquare_finalize(void)
@@ -220,7 +221,8 @@ static void binsquare_finalize(void)
 
 int main(void)
 {
-    uint64_t *map;
+    uint64_t *map = NULL;
+    uint32_t innovative_count = 0;
     square_t square = {0};
     binsquare_t binsquare = (binsquare_t) 0;
 
@@ -245,8 +247,7 @@ int main(void)
     printf("COEFF_{MIN,MAX} = {%d, %d}\n", COEFF_MIN, COEFF_MAX);
     print_square(square);
 
-    binsquare_init();
-    map = binsquare_map;
+    map = binsquare_init();
 
 
 #define PUSH(n) \
@@ -282,7 +283,7 @@ int main(void)
                                                 STA(11);
                                                     const size_t off = binsquare >> 6;
                                                     const uint64_t mask = ((uint64_t) 1) << (binsquare & ((binsquare_t) (64-1)));
-                                                    if (!(map[off] & mask)) {
+                                                    if (unlikely(!(map[off] & mask))) {
                                                         map[off] |= mask;
                                                         innovative_count++;
                                                         //printf("inn: "); print_square(square);
