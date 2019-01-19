@@ -21,8 +21,20 @@
 #include <immintrin.h>
 
 
+#if !defined(ORDER)
+#error "Define ORDER"
+#endif
+
+#if ORDER != 5
+#error "This program is for ORDER=5 only"
+#endif
+
 #if !defined(COEFF_MIN) || !defined(COEFF_MAX)
 #error "Define COEFF_MIN and COEFF_MAX"
+#endif
+
+#if COEFF_MIN > COEFF_MAX
+#error "COEFF_MIN must be smaller or equal to COEFF_MAX"
 #endif
 
 #ifndef PREFIX
