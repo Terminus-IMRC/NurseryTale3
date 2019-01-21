@@ -23,13 +23,10 @@
 #include <omp.h>
 
 
-#if !defined(ORDER)
-#error "Define ORDER"
-#endif
-
-#if ORDER != 5
+#if defined(ORDER) && ORDER != 5
 #error "This program is for ORDER=5 only"
 #endif
+#define ORDER 5
 
 #if !defined(COEFF_MIN) || !defined(COEFF_MAX)
 #error "Define COEFF_MIN and COEFF_MAX"
@@ -63,19 +60,6 @@ typedef uint64_t binsquare_t;
 #endif
 
 #define BINSQUARE_MAP_SIZE (((size_t) 1) << (ORDER*ORDER - 3))
-
-/*
- * 290
- * 4857
- * 55913
- * 557406
- */
-
-/*
- * New records: order, depth, count
- * 3, 10, 399
- * 4, 12, 16143
- */
 
 static void print_square(square_t square)
 {
@@ -111,18 +95,6 @@ static void print_square(square_t square)
     printf("%2d ", (int8_t) _mm256_extract_epi8(square, 2));
     printf("%2d ", (int8_t) _mm256_extract_epi8(square, 1));
     printf("%2d\n", (int8_t)_mm256_extract_epi8(square, 0));
-}
-
-static void print_binsquare(const binsquare_t binsquare)
-{
-    int i;
-    printf("(");
-    for (i = sizeof(binsquare) * 8 - 1; i >= ORDER*ORDER; i --)
-        printf("%d", !!(binsquare & (((binsquare_t) 1) << i)));
-    printf(")");
-    for (i = ORDER*ORDER-1; i >= 0; i --)
-        printf("%d", !!(binsquare & (((binsquare_t) 1) << i)));
-    printf("\n");
 }
 
 /* TOOD: Which is faster? -- this or LUT */
@@ -198,8 +170,6 @@ static void print_binsquare(const binsquare_t binsquare)
     } while (0)
 #endif
 
-        //binsquare = _cvtmask32_u32(_mm256_cmpneq_epi8_mask(square, _mm256_setzero_si256())); \
-        //binsquare = _mm256_movemask_epi8(_mm256_cmpeq_epi8(square, _mm256_setzero_si256())); \
 
 static void* my_cvalloc(const size_t size)
 {
@@ -231,12 +201,6 @@ static void* binsquare_init(void)
 
 #if ORDER <= 5
 #warning "Using in-memory index"
-     /*
-     if (posix_memalign(&map, 65536, size)) {
-         fprintf(stderr, "posix_memalign: %s\n", strerror(errno));
-         exit(EXIT_FAILURE);
-     }
-     */
      map = my_cvalloc(BINSQUARE_MAP_SIZE);
      if (map == NULL) {
          fprintf(stderr, "my_cvalloc: %s\n", strerror(errno));
@@ -277,8 +241,6 @@ static void* binsquare_init(void)
          exit(EXIT_FAILURE);
      }
 #endif
-
-     //(void) memset(map, 0, size);
 
      return map;
 }
@@ -330,13 +292,11 @@ int main(void)
 
 #pragma omp parallel
     {
-        int c0;
         square_t square;
         uint64_t *map = binsquare_init();
+        int c0, c1, c2;
 
 #define X(n) int c##n; square_t square_orig_c##n;
-            X(1)
-            X(2)
             X(3)
             X(4)
             X(5)
@@ -376,7 +336,7 @@ int main(void)
                                                             //print_binsquare(binsquare);
                                                         }
                                                     END(11);
-#elif 1
+#else
                                                     PUSH(11);
                                                     ADD(11, COEFF_MIN);
                                                     __mmask32 mask = _mm256_cmpneq_epi8_mask(square, _mm256_setzero_si256());
@@ -395,68 +355,6 @@ int main(void)
                                                     if (!(map[off] & hot))
                                                         map[off] |= hot;
                                                     POP(11);
-#elif 0
-                                                    PUSH(11);
-                                                    ADD(11, COEFF_MIN);
-                                                    size_t off;
-                                                    uint64_t hot, val;
-                                                    const __mmask32 mask = _mm256_cmpneq_epi8_mask(square, _mm256_setzero_si256());
-                                                    ADD(11, 1);
-                                                    const binsquare_t binsquare = _cvtmask32_u32(mask);
-                                                    off = binsquare >> 6;
-                                                    hot = ((uint64_t) 1) << (binsquare & ((binsquare_t) (64-1)));
-                                                    val = map[off];
-                                                    for (c11 = COEFF_MIN+2; c11 <= COEFF_MAX; c11 ++) {
-                                                        ADD(11, 1);
-                                                        if (unlikely(!(val & hot))) {
-                                                            map[off] |= hot;
-                                                            innovative_count++;
-                                                        }
-                                                        const binsquare_t binsquare = _cvtmask32_u32(mask);
-                                                        off = binsquare >> 6;
-                                                        hot = ((uint64_t) 1) << (binsquare & ((binsquare_t) (64-1)));
-                                                        val = map[off];
-                                                    }
-                                                    if (unlikely(!(val & hot))) {
-                                                        map[off] |= hot;
-                                                        innovative_count++;
-                                                    }
-                                                    POP(11);
-#else
-                                                    square_t add = get_add(11, 2);
-                                                    square_t square0, square1;
-                                                    square0 = _mm256_add_epi8(square, get_add(11, COEFF_MIN-2));
-                                                    square1 = _mm256_add_epi8(square, get_add(11, COEFF_MIN-1));
-                                                    for (c11 = COEFF_MIN; c11 <= COEFF_MAX; c11 += 2) {
-                                                        square_t zero = _mm256_setzero_si256();
-                                                        __mmask32 mask0, mask1;
-                                                        square0 = _mm256_add_epi8(square0, add);
-                                                        square1 = _mm256_add_epi8(square1, add);
-                                                        mask0 = _mm256_cmpneq_epi8_mask(square0, zero);
-                                                        mask1 = _mm256_cmpneq_epi8_mask(square1, zero);
-                                                        binsquare_t binsquare0 = _cvtmask32_u32(mask0);
-                                                        binsquare_t binsquare1 = _cvtmask32_u32(mask1);
-                                                        const size_t off0 = binsquare0 >> 6;
-                                                        const size_t off1 = binsquare1 >> 6;
-                                                        const uint64_t hot0 = ((uint64_t) 1) << (binsquare0 & ((binsquare_t) 63));
-                                                        const uint64_t hot1 = ((uint64_t) 1) << (binsquare1 & ((binsquare_t) 63));
-                                                        const uint64_t val0 = map[off0];
-                                                        const uint64_t val1 = map[off1];
-                                                        //uint64_t val1 = (off0 == off1) ? 0 : map[off1];
-                                                        if (unlikely(!(val0 & hot0))) {
-                                                            map[off0] |= hot0;
-                                                            innovative_count++;
-                                                        }
-                                                        if (unlikely(off0 == off1)) {
-                                                            if (hot0 == hot1)
-                                                                continue;
-                                                            //val1 = val0;
-                                                        }
-                                                        if (unlikely(!(val1 & hot1))) {
-                                                            map[off1] |= hot1;
-                                                            innovative_count++;
-                                                        }
-                                                    }
 #endif
                                                 END(10);
                                             END(9);
@@ -480,7 +378,7 @@ int main(void)
         char str[0x100];
         snprintf(str, sizeof(str), "./bsmap_gather bsmap.%d.%d.%d.*",
                 ORDER, COEFF_MIN, COEFF_MAX);
-        system(str);
+        (void) execl("/bin/sh", "sh", "-c", str, NULL);
     }
 
     return 0;
