@@ -8,6 +8,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <stdint.h>
 #include <assert.h>
 #include <stdlib.h>
@@ -19,6 +20,7 @@
 #include <unistd.h>
 #include <inttypes.h>
 #include <immintrin.h>
+#include <omp.h>
 
 
 #if !defined(ORDER)
@@ -47,6 +49,8 @@
 #define _STR(x) #x
 #define STR(x) _STR(x)
 
+#define mb() asm volatile ("" ::: "memory")
+
 typedef int_fast8_t square_elem_t;
 typedef __m256i square_t;
 
@@ -58,8 +62,7 @@ typedef uint32_t binsquare_t;
 typedef uint64_t binsquare_t;
 #endif
 
-static void *binsquare_map = NULL;
-static const size_t binsquare_map_len = ((size_t) 1) << (ORDER*ORDER);
+#define BINSQUARE_MAP_SIZE (((size_t) 1) << (ORDER*ORDER - 3))
 
 /*
  * 290
@@ -124,6 +127,7 @@ static void print_binsquare(const binsquare_t binsquare)
 
 /* TOOD: Which is faster? -- this or LUT */
 
+#if 0
 #define square_addsub_line(square, line_id, c, binsquare) \
     do { \
         square_t add; \
@@ -168,15 +172,54 @@ static void print_binsquare(const binsquare_t binsquare)
         square = _mm256_add_epi8(square, add); \
         binsquare = _cvtmask32_u32(_mm256_cmpneq_epi8_mask(square, _mm256_setzero_si256())); \
     } while (0)
+#else
+#define get_add(line_id, c) \
+    ({ \
+        square_t __attribute__((aligned(32))) adds[ORDER*2+2] = { \
+                _mm256_set_epi8(0,0,0,0,0,0,0,c,c,c,c,c,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0), \
+                _mm256_set_epi8(0,0,0,0,0,0,0,0,0,0,0,0,c,c,c,c,c,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0), \
+                _mm256_set_epi8(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,c,c,c,c,c,0,0,0,0,0,0,0,0,0,0), \
+                _mm256_set_epi8(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,c,c,c,c,c,0,0,0,0,0), \
+                _mm256_set_epi8(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,c,c,c,c,c), \
+                _mm256_set_epi8(0,0,0,0,0,0,0,c,0,0,0,0,c,0,0,0,0,c,0,0,0,0,c,0,0,0,0,c,0,0,0,0), \
+                _mm256_set_epi8(0,0,0,0,0,0,0,0,c,0,0,0,0,c,0,0,0,0,c,0,0,0,0,c,0,0,0,0,c,0,0,0), \
+                _mm256_set_epi8(0,0,0,0,0,0,0,0,0,c,0,0,0,0,c,0,0,0,0,c,0,0,0,0,c,0,0,0,0,c,0,0), \
+                _mm256_set_epi8(0,0,0,0,0,0,0,0,0,0,c,0,0,0,0,c,0,0,0,0,c,0,0,0,0,c,0,0,0,0,c,0), \
+                _mm256_set_epi8(0,0,0,0,0,0,0,0,0,0,0,c,0,0,0,0,c,0,0,0,0,c,0,0,0,0,c,0,0,0,0,c), \
+                _mm256_set_epi8(0,0,0,0,0,0,0,c,0,0,0,0,0,c,0,0,0,0,0,c,0,0,0,0,0,c,0,0,0,0,0,c), \
+                _mm256_set_epi8(0,0,0,0,0,0,0,0,0,0,0,c,0,0,0,c,0,0,0,c,0,0,0,c,0,0,0,c,0,0,0,0), \
+        }; \
+        adds[line_id]; \
+    })
 
+#define square_addsub_line(square, line_id, c, binsquare) \
+    do { \
+        square = _mm256_add_epi8(square, get_add(line_id, c)); \
+    } while (0)
+#endif
+
+        //binsquare = _cvtmask32_u32(_mm256_cmpneq_epi8_mask(square, _mm256_setzero_si256())); \
         //binsquare = _mm256_movemask_epi8(_mm256_cmpeq_epi8(square, _mm256_setzero_si256())); \
+
+static void* my_cvalloc(const size_t size)
+{
+    intptr_t p;
+    const size_t align = 65536;
+    const size_t size_suf = size + align - 1;
+    p = (intptr_t) calloc(size_suf, 1);
+    if (p == (intptr_t) NULL)
+        return NULL;
+    const size_t mod = ((intptr_t) p) % align;
+    if (mod)
+        p += align - mod;
+    return (void*) p;
+}
 
 static void* binsquare_init(void)
 {
      void *map;
-     const size_t size = binsquare_map_len * sizeof(binsquare_t);
 
-     printf("Mapping %zu bytes\n", size);
+     printf("Mapping %zu bytes\n", BINSQUARE_MAP_SIZE);
 
      /*
       * order size
@@ -188,8 +231,15 @@ static void* binsquare_init(void)
 
 #if ORDER <= 5
 #warning "Using in-memory index"
+     /*
      if (posix_memalign(&map, 65536, size)) {
          fprintf(stderr, "posix_memalign: %s\n", strerror(errno));
+         exit(EXIT_FAILURE);
+     }
+     */
+     map = my_cvalloc(BINSQUARE_MAP_SIZE);
+     if (map == NULL) {
+         fprintf(stderr, "my_cvalloc: %s\n", strerror(errno));
          exit(EXIT_FAILURE);
      }
 #else
@@ -228,125 +278,210 @@ static void* binsquare_init(void)
      }
 #endif
 
-     (void) memset(map, 0, size);
-     binsquare_map = map;
+     //(void) memset(map, 0, size);
 
      return map;
 }
 
-static void binsquare_finalize(void)
+static void binsquare_finalize(void *map)
 {
     FILE *fp;
     size_t rets;
+    const int tid = omp_get_thread_num();
+    char str[0x100];
 
-    fp = fopen("bsmap." STR(ORDER) "." STR(COEFF_MIN) "." STR(COEFF_MAX), "wb");
+    snprintf(str, sizeof(str), "bsmap.%d.%d.%d.%d",
+            ORDER, COEFF_MIN, COEFF_MAX, tid);
+
+    fp = fopen(str, "wb");
     if (fp == NULL) {
-        fprintf(stderr, "fopen: %s\n", strerror(errno));
+        fprintf(stderr, "fopen: %s: %s\n", str, strerror(errno));
         exit(EXIT_FAILURE);
     }
 
-    rets = fwrite(binsquare_map, sizeof(binsquare_t), binsquare_map_len, fp);
-    if (rets != binsquare_map_len) {
-        fprintf(stderr, "fwrite: %s\n", strerror(errno));
+    rets = fwrite(map, 1, BINSQUARE_MAP_SIZE, fp);
+    if (rets != BINSQUARE_MAP_SIZE) {
+        fprintf(stderr, "fwrite: %s: %s\n", str, strerror(errno));
         exit(EXIT_FAILURE);
     }
 
     if (fclose(fp)) {
-        fprintf(stderr, "fclose: %s\n", strerror(errno));
+        fprintf(stderr, "fclose: %s: %s\n", str, strerror(errno));
         exit(EXIT_FAILURE);
     }
 }
 
 int main(void)
 {
-    uint64_t *map;
-    uint32_t innovative_count = 0;
-    square_t square = _mm256_setzero_si256();
-    binsquare_t binsquare = (binsquare_t) 0;
-
-#define X(n) int c##n; square_t square_orig_c##n; binsquare_t binsquare_orig_c##n;
-
-    X(0)
-    X(1)
-    X(2)
-    X(3)
-    X(4)
-    X(5)
-    X(6)
-    X(7)
-    X(8)
-    X(9)
-    X(10)
-    X(11)
-
-
     printf("Built on %s %s\n", __DATE__, __TIME__);
     printf("ORDER = %d\n", ORDER);
     printf("COEFF_{MIN,MAX} = {%d, %d}\n", COEFF_MIN, COEFF_MAX);
-    print_square(square);
 
-    map = binsquare_init();
-
-
-#define PUSH(n) \
-    do { \
-        square_orig_c##n = square; \
-        binsquare_orig_c##n = binsquare; \
-    } while (0)
+#define PUSH(n) square_orig_c##n = square
 
 #define LOOP(n) for (c##n = COEFF_MIN; c##n <= COEFF_MAX; c##n ++)
 
 #define ADD(n, c) square_addsub_line(square, n, c, binsquare)
 
-#define POP(n) \
-    do { \
-        square = square_orig_c##n; \
-        binsquare = binsquare_orig_c##n; \
-    } while (0)
+#define POP(n) square = square_orig_c##n
 
-#define STA(n) PUSH(n); ADD(n, COEFF_MIN-1); LOOP(n) { ADD(n, 1)
-#define END(n) } POP(n)
+#define STA(n) PUSH(n); ADD(n, COEFF_MIN); LOOP(n) {
+#define END(n) ADD(n, 1); } POP(n)
 
-    STA(0);
-        STA(1);
-            STA(2);
-                STA(3);
-                    STA(4);
-                        STA(5);
-                            STA(6);
-                                STA(7);
-                                    STA(8);
-                                        STA(9);
-                                            STA(10);
-                                                STA(11);
-                                                    const size_t off = binsquare >> 6;
-                                                    const uint64_t mask = ((uint64_t) 1) << (binsquare & ((binsquare_t) (64-1)));
-                                                    if (unlikely(!(map[off] & mask))) {
-                                                        map[off] |= mask;
-                                                        innovative_count++;
-                                                        //printf("inn: "); print_square(square);
-                                                        //print_binsquare(binsquare);
+#pragma omp parallel
+    {
+        int c0;
+        square_t square;
+        uint64_t *map = binsquare_init();
+
+#define X(n) int c##n; square_t square_orig_c##n;
+            X(1)
+            X(2)
+            X(3)
+            X(4)
+            X(5)
+            X(6)
+            X(7)
+            X(8)
+            X(9)
+            X(10)
+            X(11)
+#undef X
+
+#pragma omp for nowait collapse(3)
+        for (c0 = COEFF_MIN; c0 <= COEFF_MAX; c0 ++) {
+            for (c1 = COEFF_MIN; c1 <= COEFF_MAX; c1 ++) {
+                for (c2 = COEFF_MIN; c2 <= COEFF_MAX; c2 ++) {
+                    square = _mm256_setzero_si256();
+                    ADD(0, c0);
+                    ADD(1, c1);
+                    ADD(2, c2);
+                    STA(3);
+                        STA(4);
+                            STA(5);
+                                STA(6);
+                                    STA(7);
+                                        STA(8);
+                                            STA(9);
+                                                STA(10);
+#if 0
+                                                    STA(11);
+                                                        const binsquare_t binsquare = _cvtmask32_u32(_mm256_cmpneq_epi8_mask(square, _mm256_setzero_si256()));
+                                                        const size_t off = binsquare >> 6;
+                                                        const uint64_t mask = ((uint64_t) 1) << (binsquare & ((binsquare_t) (64-1)));
+                                                        if (unlikely(!(map[off] & mask))) {
+                                                            map[off] |= mask;
+                                                            innovative_count++;
+                                                            //printf("inn: "); print_square(square);
+                                                            //print_binsquare(binsquare);
+                                                        }
+                                                    END(11);
+#elif 1
+                                                    PUSH(11);
+                                                    ADD(11, COEFF_MIN);
+                                                    __mmask32 mask = _mm256_cmpneq_epi8_mask(square, _mm256_setzero_si256());
+                                                    for (c11 = COEFF_MIN+1; c11 <= COEFF_MAX; c11 ++) {
+                                                        ADD(11, 1);
+                                                        const binsquare_t binsquare = _cvtmask32_u32(mask);
+                                                        mask = _mm256_cmpneq_epi8_mask(square, _mm256_setzero_si256());
+                                                        const size_t off = binsquare >> 6;
+                                                        const uint64_t hot = ((uint64_t) 1) << (binsquare & ((binsquare_t) (64-1)));
+                                                        if (!(map[off] & hot))
+                                                            map[off] |= hot;
                                                     }
-                                                END(11);
-                                            END(10);
-                                        END(9);
-                                    END(8);
-                                END(7);
-                            END(6);
-                        END(5);
-                    END(4);
-                END(3);
-            END(2);
-        END(1);
-    END(0);
+                                                    const binsquare_t binsquare = _cvtmask32_u32(mask);
+                                                    const size_t off = binsquare >> 6;
+                                                    const uint64_t hot = ((uint64_t) 1) << (binsquare & ((binsquare_t) (64-1)));
+                                                    if (!(map[off] & hot))
+                                                        map[off] |= hot;
+                                                    POP(11);
+#elif 0
+                                                    PUSH(11);
+                                                    ADD(11, COEFF_MIN);
+                                                    size_t off;
+                                                    uint64_t hot, val;
+                                                    const __mmask32 mask = _mm256_cmpneq_epi8_mask(square, _mm256_setzero_si256());
+                                                    ADD(11, 1);
+                                                    const binsquare_t binsquare = _cvtmask32_u32(mask);
+                                                    off = binsquare >> 6;
+                                                    hot = ((uint64_t) 1) << (binsquare & ((binsquare_t) (64-1)));
+                                                    val = map[off];
+                                                    for (c11 = COEFF_MIN+2; c11 <= COEFF_MAX; c11 ++) {
+                                                        ADD(11, 1);
+                                                        if (unlikely(!(val & hot))) {
+                                                            map[off] |= hot;
+                                                            innovative_count++;
+                                                        }
+                                                        const binsquare_t binsquare = _cvtmask32_u32(mask);
+                                                        off = binsquare >> 6;
+                                                        hot = ((uint64_t) 1) << (binsquare & ((binsquare_t) (64-1)));
+                                                        val = map[off];
+                                                    }
+                                                    if (unlikely(!(val & hot))) {
+                                                        map[off] |= hot;
+                                                        innovative_count++;
+                                                    }
+                                                    POP(11);
+#else
+                                                    square_t add = get_add(11, 2);
+                                                    square_t square0, square1;
+                                                    square0 = _mm256_add_epi8(square, get_add(11, COEFF_MIN-2));
+                                                    square1 = _mm256_add_epi8(square, get_add(11, COEFF_MIN-1));
+                                                    for (c11 = COEFF_MIN; c11 <= COEFF_MAX; c11 += 2) {
+                                                        square_t zero = _mm256_setzero_si256();
+                                                        __mmask32 mask0, mask1;
+                                                        square0 = _mm256_add_epi8(square0, add);
+                                                        square1 = _mm256_add_epi8(square1, add);
+                                                        mask0 = _mm256_cmpneq_epi8_mask(square0, zero);
+                                                        mask1 = _mm256_cmpneq_epi8_mask(square1, zero);
+                                                        binsquare_t binsquare0 = _cvtmask32_u32(mask0);
+                                                        binsquare_t binsquare1 = _cvtmask32_u32(mask1);
+                                                        const size_t off0 = binsquare0 >> 6;
+                                                        const size_t off1 = binsquare1 >> 6;
+                                                        const uint64_t hot0 = ((uint64_t) 1) << (binsquare0 & ((binsquare_t) 63));
+                                                        const uint64_t hot1 = ((uint64_t) 1) << (binsquare1 & ((binsquare_t) 63));
+                                                        const uint64_t val0 = map[off0];
+                                                        const uint64_t val1 = map[off1];
+                                                        //uint64_t val1 = (off0 == off1) ? 0 : map[off1];
+                                                        if (unlikely(!(val0 & hot0))) {
+                                                            map[off0] |= hot0;
+                                                            innovative_count++;
+                                                        }
+                                                        if (unlikely(off0 == off1)) {
+                                                            if (hot0 == hot1)
+                                                                continue;
+                                                            //val1 = val0;
+                                                        }
+                                                        if (unlikely(!(val1 & hot1))) {
+                                                            map[off1] |= hot1;
+                                                            innovative_count++;
+                                                        }
+                                                    }
+#endif
+                                                END(10);
+                                            END(9);
+                                        END(8);
+                                    END(7);
+                                END(6);
+                            END(5);
+                        END(4);
+                    END(3);
+                }
+            }
+        }
 
+        printf("Final square:    ");
+        print_square(square);
 
-    printf("Final square:    ");
-    print_square(square);
-    printf("Final binsquare: ");
-    print_binsquare(binsquare);
-    printf("innovate_count = %" PRIu32 "\n", innovative_count);
+        binsquare_finalize(map);
+    }
 
-    binsquare_finalize();
+    {
+        char str[0x100];
+        snprintf(str, sizeof(str), "./bsmap_gather bsmap.%d.%d.%d.*",
+                ORDER, COEFF_MIN, COEFF_MAX);
+        system(str);
+    }
+
     return 0;
 }
