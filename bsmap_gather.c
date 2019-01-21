@@ -29,42 +29,31 @@ static uint64_t* gather(uint64_t *sum, const char *filename, size_t *sizep)
 
     *sizep = sb.st_size;
 
+    p = calloc(*sizep, 1);
+    if (p == NULL) {
+        fprintf(stderr, "calloc: %s\n", strerror(errno));
+        exit(EXIT_FAILURE);
+    }
+
     fd = open(filename, O_RDONLY);
     if (fd < 0) {
         fprintf(stderr, "open: %s: %s\n", filename, strerror(errno));
         exit(EXIT_FAILURE);
     }
 
-    if (sum == NULL) {
-        sum = calloc(*sizep, 1);
-        if (sum == NULL) {
-            fprintf(stderr, "calloc: %s\n", strerror(errno));
-            exit(EXIT_FAILURE);
-        }
-        retss = read(fd, sum, *sizep);
-        if (retss != *sizep) {
-            fprintf(stderr, "read: %s: %s\n", filename, strerror(errno));
-            exit(EXIT_FAILURE);
-        }
-        return sum;
-    } else {
-        p = calloc(*sizep, 1);
-        if (p == NULL) {
-            fprintf(stderr, "calloc: %s\n", strerror(errno));
-            exit(EXIT_FAILURE);
-        }
-
-        retss = read(fd, p, *sizep);
-        if (retss != *sizep) {
-            fprintf(stderr, "read: %s: %s\n", filename, strerror(errno));
-            exit(EXIT_FAILURE);
-        }
+    retss = read(fd, p, *sizep);
+    if (retss != *sizep) {
+        fprintf(stderr, "read: %s: %s\n", filename, strerror(errno));
+        exit(EXIT_FAILURE);
     }
 
     if (close(fd)) {
         fprintf(stderr, "close: %s: %s\n", filename, strerror(errno));
         exit(EXIT_FAILURE);
     }
+
+    if (sum == NULL)
+        return p;
 
     for (i = 0; i < *sizep / sizeof(*sum); i ++)
         sum[i] |= p[i];
@@ -112,6 +101,8 @@ int main(int argc, char *argv[])
         }
     } else
         printf("Redirect stdout to file to output gathered bsmap\n");
+
+    free(sum);
 
     return 0;
 }
