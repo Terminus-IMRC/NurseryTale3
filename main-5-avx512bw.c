@@ -43,21 +43,9 @@
 #define likely(x)   __builtin_expect(!!(x), 1)
 #define unlikely(x) __builtin_expect(!!(x), 0)
 
-#define _STR(x) #x
-#define STR(x) _STR(x)
-
-#define mb() asm volatile ("" ::: "memory")
-
 typedef int_fast8_t square_elem_t;
 typedef __m256i square_t;
-
-#if   ORDER == 3 || ORDER == 4
-typedef uint16_t binsquare_t;
-#elif ORDER == 5
 typedef uint32_t binsquare_t;
-#elif ORDER == 6
-typedef uint64_t binsquare_t;
-#endif
 
 #define BINSQUARE_MAP_SIZE (((size_t) 1) << (ORDER*ORDER - 3))
 
@@ -97,54 +85,6 @@ static void print_square(square_t square)
     printf("%2d\n", (int8_t)_mm256_extract_epi8(square, 0));
 }
 
-/* TOOD: Which is faster? -- this or LUT */
-
-#if 0
-#define square_addsub_line(square, line_id, c, binsquare) \
-    do { \
-        square_t add; \
-        switch (line_id) { \
-            case 0: \
-                add = _mm256_set_epi8(0,0,0,0,0,0,0,c,c,c,c,c,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0); \
-                break; \
-            case 1: \
-                add = _mm256_set_epi8(0,0,0,0,0,0,0,0,0,0,0,0,c,c,c,c,c,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0); \
-                break; \
-            case 2: \
-                add = _mm256_set_epi8(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,c,c,c,c,c,0,0,0,0,0,0,0,0,0,0); \
-                break; \
-            case 3: \
-                add = _mm256_set_epi8(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,c,c,c,c,c,0,0,0,0,0); \
-                break; \
-            case 4: \
-                add = _mm256_set_epi8(0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,c,c,c,c,c); \
-                break; \
-            case 5: \
-                add = _mm256_set_epi8(0,0,0,0,0,0,0,c,0,0,0,0,c,0,0,0,0,c,0,0,0,0,c,0,0,0,0,c,0,0,0,0); \
-                break; \
-            case 6: \
-                add = _mm256_set_epi8(0,0,0,0,0,0,0,0,c,0,0,0,0,c,0,0,0,0,c,0,0,0,0,c,0,0,0,0,c,0,0,0); \
-                break; \
-            case 7: \
-                add = _mm256_set_epi8(0,0,0,0,0,0,0,0,0,c,0,0,0,0,c,0,0,0,0,c,0,0,0,0,c,0,0,0,0,c,0,0); \
-                break; \
-            case 8: \
-                add = _mm256_set_epi8(0,0,0,0,0,0,0,0,0,0,c,0,0,0,0,c,0,0,0,0,c,0,0,0,0,c,0,0,0,0,c,0); \
-                break; \
-            case 9: \
-                add = _mm256_set_epi8(0,0,0,0,0,0,0,0,0,0,0,c,0,0,0,0,c,0,0,0,0,c,0,0,0,0,c,0,0,0,0,c); \
-                break; \
-            case 10: \
-                add = _mm256_set_epi8(0,0,0,0,0,0,0,c,0,0,0,0,0,c,0,0,0,0,0,c,0,0,0,0,0,c,0,0,0,0,0,c); \
-                break; \
-            default: \
-                add = _mm256_set_epi8(0,0,0,0,0,0,0,0,0,0,0,c,0,0,0,c,0,0,0,c,0,0,0,c,0,0,0,c,0,0,0,0); \
-                break; \
-        } \
-        square = _mm256_add_epi8(square, add); \
-        binsquare = _cvtmask32_u32(_mm256_cmpneq_epi8_mask(square, _mm256_setzero_si256())); \
-    } while (0)
-#else
 #define get_add(line_id, c) \
     ({ \
         square_t __attribute__((aligned(32))) adds[ORDER*2+2] = { \
@@ -164,11 +104,8 @@ static void print_square(square_t square)
         adds[line_id]; \
     })
 
-#define square_addsub_line(square, line_id, c, binsquare) \
-    do { \
-        square = _mm256_add_epi8(square, get_add(line_id, c)); \
-    } while (0)
-#endif
+#define square_addsub_line(square, line_id, c) \
+    square = _mm256_add_epi8(square, get_add(line_id, c))
 
 
 static void* my_cvalloc(const size_t size)
@@ -283,7 +220,7 @@ int main(void)
 
 #define LOOP(n) for (c##n = COEFF_MIN; c##n <= COEFF_MAX; c##n ++)
 
-#define ADD(n, c) square_addsub_line(square, n, c, binsquare)
+#define ADD(n, c) square_addsub_line(square, n, c)
 
 #define POP(n) square = square_orig_c##n
 
