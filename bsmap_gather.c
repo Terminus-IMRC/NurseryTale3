@@ -66,7 +66,7 @@ static uint64_t* gather(uint64_t *sum, const char *filename, size_t *sizep)
         exit(EXIT_FAILURE);
     }
 
-    for (i = 0; i < (*sizep >> 3); i ++)
+    for (i = 0; i < *sizep / sizeof(*sum); i ++)
         sum[i] |= p[i];
 
     free(p);
@@ -88,18 +88,30 @@ int main(int argc, char *argv[])
     void *sum;
     int i;
     size_t size = 0;
+    uint32_t count;
 
     if (argc <= 1) {
         fprintf(stderr, "error: Specify bsmap files\n");
         exit(EXIT_FAILURE);
     }
-    printf("Gathering %d file(s)\n", argc - 1);
+    fprintf(stderr, "Gathering %d file(s)\n", argc - 1);
 
     sum = gather(NULL, argv[1], &size);
     for (i = 2; i < argc; i ++)
         gather(sum, argv[i], &size);
 
-    printf("innovative_count = %" PRIu32 "\n", count_innovative(sum, size));
+    count = count_innovative(sum, size);
+    fprintf(stderr, "innovative_count = %" PRIu32 "\n", count);
+
+    if (!isatty(STDOUT_FILENO)) {
+        fprintf(stderr, "Writing gathered bsmap to stdout\n");
+        ssize_t retss = write(STDOUT_FILENO, sum, size);
+        if (retss != size) {
+            fprintf(stderr, "write: stdout: %s\n", strerror(errno));
+            exit(EXIT_FAILURE);
+        }
+    } else
+        printf("Redirect stdout to file to output gathered bsmap\n");
 
     return 0;
 }
