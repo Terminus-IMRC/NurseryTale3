@@ -12,10 +12,10 @@
 static uint64_t* gather(uint64_t *sum, const char *filename, size_t *sizep)
 {
     size_t i;
-    int fd;
+    FILE *fp;
     struct stat sb;
     uint64_t *p;
-    ssize_t retss;
+    size_t rets;
 
     if (lstat(filename, &sb)) {
         fprintf(stderr, "lstat: %s: %s\n", filename, strerror(errno));
@@ -35,19 +35,19 @@ static uint64_t* gather(uint64_t *sum, const char *filename, size_t *sizep)
         exit(EXIT_FAILURE);
     }
 
-    fd = open(filename, O_RDONLY);
-    if (fd < 0) {
-        fprintf(stderr, "open: %s: %s\n", filename, strerror(errno));
+    fp = fopen(filename, "rb");
+    if (fp == NULL) {
+        fprintf(stderr, "fopen: %s: %s\n", filename, strerror(errno));
         exit(EXIT_FAILURE);
     }
 
-    retss = read(fd, p, *sizep);
-    if (retss != *sizep) {
-        fprintf(stderr, "read: %s: %s\n", filename, strerror(errno));
+    rets = fread(p, 1, *sizep, fp);
+    if (rets != *sizep) {
+        fprintf(stderr, "fread: %s: %s\n", filename, strerror(errno));
         exit(EXIT_FAILURE);
     }
 
-    if (close(fd)) {
+    if (fclose(fp)) {
         fprintf(stderr, "close: %s: %s\n", filename, strerror(errno));
         exit(EXIT_FAILURE);
     }
@@ -94,9 +94,9 @@ int main(int argc, char *argv[])
 
     if (!isatty(STDOUT_FILENO)) {
         fprintf(stderr, "Writing gathered bsmap to stdout\n");
-        ssize_t retss = write(STDOUT_FILENO, sum, size);
-        if (retss != size) {
-            fprintf(stderr, "write: stdout: %s\n", strerror(errno));
+        size_t rets = fwrite(sum, 1, size, stdout);
+        if (rets != size) {
+            fprintf(stderr, "fwrite: stdout: %s\n", strerror(errno));
             exit(EXIT_FAILURE);
         }
     } else
