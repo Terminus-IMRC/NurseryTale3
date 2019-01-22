@@ -243,6 +243,8 @@ int main(void)
             X(9)
             X(10)
             X(11)
+            X(12)
+            X(13)
 #undef X
 
 #pragma omp for nowait collapse(6)
@@ -264,44 +266,48 @@ int main(void)
                                         STA(8);
                                             STA(9);
                                                 STA(10);
-#if 0
                                                     STA(11);
-                                                        const binsquare_t binsquare = _cvtmask32_u32(_mm256_cmpneq_epi8_mask(square, _mm256_setzero_si256()));
-                                                        const size_t off = binsquare >> 6;
-                                                        const uint64_t mask = ((uint64_t) 1) << (binsquare & ((binsquare_t) (64-1)));
-                                                        if (unlikely(!(map[off] & mask))) {
-                                                            map[off] |= mask;
-                                                            innovative_count++;
-                                                            //printf("inn: "); print_square(square);
-                                                            //print_binsquare(binsquare);
-                                                        }
-                                                    END(11);
+                                                        STA(12);
+#if 0
+                                                            STA(11);
+                                                                const binsquare_t binsquare = _cvtmask32_u32(_mm256_cmpneq_epi8_mask(square, _mm256_setzero_si256()));
+                                                                const size_t off = binsquare >> 6;
+                                                                const uint64_t mask = ((uint64_t) 1) << (binsquare & ((binsquare_t) (64-1)));
+                                                                if (unlikely(!(map[off] & mask))) {
+                                                                    map[off] |= mask;
+                                                                    innovative_count++;
+                                                                    //printf("inn: "); print_square(square);
+                                                                    //print_binsquare(binsquare);
+                                                                }
+                                                            END(11);
 #else
-                                                    PUSH(11);
-                                                    ADD(11, COEFF_MIN);
-                                                    __mmask64 mask = _mm512_cmpneq_epi8_mask(square, _mm512_setzero_si512());
-                                                    for (c11 = COEFF_MIN+1; c11 <= COEFF_MAX; c11 ++) {
-                                                        ADD(11, 1);
-                                                        const binsquare_t binsquare = _cvtmask64_u64(mask);
-                                                        mask = _mm512_cmpneq_epi8_mask(square, _mm512_setzero_si512());
-                                                        const size_t off = binsquare >> 6;
-                                                        const uint64_t hot = ((uint64_t) 1) << (binsquare & ((binsquare_t) (64-1)));
-                                                        if (!(map[off] & hot)) {
+                                                            PUSH(13);
+                                                            ADD(13, COEFF_MIN);
+                                                            __mmask64 mask = _mm512_cmpneq_epi8_mask(square, _mm512_setzero_si512());
+                                                            for (c13 = COEFF_MIN+1; c13 <= COEFF_MAX; c13 ++) {
+                                                                ADD(13, 1);
+                                                                const binsquare_t binsquare = _cvtmask64_u64(mask);
+                                                                mask = _mm512_cmpneq_epi8_mask(square, _mm512_setzero_si512());
+                                                                const size_t off = binsquare >> 6;
+                                                                const uint64_t hot = ((uint64_t) 1) << (binsquare & ((binsquare_t) (64-1)));
+                                                                if (!(map[off] & hot)) {
 #pragma omp critical
-                                                            if (!(map[off] & hot))
-                                                                map[off] |= hot;
-                                                        }
-                                                    }
-                                                    const binsquare_t binsquare = _cvtmask64_u64(mask);
-                                                    const size_t off = binsquare >> 6;
-                                                    const uint64_t hot = ((uint64_t) 1) << (binsquare & ((binsquare_t) (64-1)));
-                                                    if (!(map[off] & hot)) {
+                                                                    if (!(map[off] & hot))
+                                                                        map[off] |= hot;
+                                                                }
+                                                            }
+                                                            const binsquare_t binsquare = _cvtmask64_u64(mask);
+                                                            const size_t off = binsquare >> 6;
+                                                            const uint64_t hot = ((uint64_t) 1) << (binsquare & ((binsquare_t) (64-1)));
+                                                            if (!(map[off] & hot)) {
 #pragma omp critical
-                                                        if (!(map[off] & hot))
-                                                            map[off] |= hot;
-                                                    }
-                                                    POP(11);
+                                                                if (!(map[off] & hot))
+                                                                    map[off] |= hot;
+                                                            }
+                                                            POP(13);
 #endif
+                                                        END(12);
+                                                    END(11);
                                                 END(10);
                                             END(9);
                                         END(8);
