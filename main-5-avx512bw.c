@@ -246,7 +246,7 @@ int main(void)
 #undef X
 
 #pragma omp for nowait collapse(3)
-        for (c0 = COEFF_MIN; c0 <= COEFF_MAX; c0 ++) {
+        for (c0 = 0; c0 <= COEFF_MAX; c0 ++) {
             for (c1 = COEFF_MIN; c1 <= COEFF_MAX; c1 ++) {
                 for (c2 = COEFF_MIN; c2 <= COEFF_MAX; c2 ++) {
                     square = _mm256_setzero_si256();
