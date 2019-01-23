@@ -39,7 +39,7 @@ static void bsmap_to_bslist(void)
             if (i == 0 && j == 0)
                 continue;
             if (u & m) {
-                const binsquare_t bs = (u * sizeof(u) * 8) | j;
+                const binsquare_t bs = (i * sizeof(u) * 8) | j;
                 const size_t rets = fwrite(&bs, sizeof(bs), 1, stdout);
                 if (rets != 1) {
                     fprintf(stderr, "fwrite: %s\n", strerror(errno));
