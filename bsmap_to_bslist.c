@@ -35,6 +35,9 @@ static void bsmap_to_bslist(void)
         }
         for (j = 0; j < sizeof(u) * 8; j ++) {
             const __typeof__(u) m = ((__typeof__(u)) 1) << j;
+            /* Exclude the null binsquare. */
+            if (i == 0 && j == 0)
+                continue;
             if (u & m) {
                 const binsquare_t bs = (u * sizeof(u) * 8) | j;
                 const size_t rets = fwrite(&bs, sizeof(bs), 1, stdout);
@@ -48,6 +51,7 @@ static void bsmap_to_bslist(void)
     }
     fprintf(stderr, "%zu entries (%zu bytes) written\n",
             cnt, cnt * sizeof(binsquare_t));
+    fprintf(stderr, "Note: This count excludes the null binsquare\n");
 }
 
 int main(void)
